@@ -10,7 +10,12 @@
 #define blockSize 64
 
 // buffers
-int* dev_buf;
+int* dev_scan;
+
+int* dev_idata;
+int* dev_bools;
+int* dev_indices;
+int* dev_scatter;
 
 namespace StreamCompaction {
     namespace Efficient {
@@ -82,31 +87,31 @@ namespace StreamCompaction {
             dim3 fullBlocksPerGrid((n2 + blockSize - 1) / blockSize);
 
             // allocate memory on GPU
-            cudaMalloc((void**)&dev_buf, n2 * sizeof(int));
+            cudaMalloc((void**)&dev_scan, n2 * sizeof(int));
 
             // copy only first n of input to device
-            cudaMemcpy(dev_buf, idata, sizeof(int) * n, cudaMemcpyHostToDevice);
+            cudaMemcpy(dev_scan, idata, sizeof(int) * n, cudaMemcpyHostToDevice);
 
             // upsweep
             for (int d = 0; d <= ilog2ceil(n2) - 1; d++) {
-                upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_buf);
+                upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_scan);
             }
 
             // copy back to host to change root to 0, then back to device
-            cudaMemcpy(odata, dev_buf, sizeof(int) * n2, cudaMemcpyDeviceToHost);
+            cudaMemcpy(odata, dev_scan, sizeof(int) * n2, cudaMemcpyDeviceToHost);
             odata[n2 - 1] = 0;
-            cudaMemcpy(dev_buf, odata, sizeof(int) * n2, cudaMemcpyHostToDevice);
+            cudaMemcpy(dev_scan, odata, sizeof(int) * n2, cudaMemcpyHostToDevice);
 
             // downsweep
             for (int d = ilog2ceil(n2) - 1; d >= 0; d--) {
-              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_buf);
+              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_scan);
             }
 
             // copy output to host
-            cudaMemcpy(odata, dev_buf, sizeof(int) * n, cudaMemcpyDeviceToHost);
+            cudaMemcpy(odata, dev_scan, sizeof(int) * n, cudaMemcpyDeviceToHost);
 
             // free data from GPU
-            cudaFree(dev_buf);
+            cudaFree(dev_scan);
 
             timer().endGpuTimer();
         }
@@ -121,10 +126,55 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int *odata, const int *idata) {
-            timer().startGpuTimer();
-            // TODO
-            timer().endGpuTimer();
-            return -1;
+            // timer().startGpuTimer();
+            
+            // setup block structure
+            dim3 fullBlocksPerGrid((n + blockSize - 1) / blockSize);
+
+            // initialize host arrays
+            int* host_bools = new int[n];
+            int* host_indices = new int[n];
+
+            // allocate memory on GPU
+            cudaMalloc((void**)&dev_idata, n * sizeof(int));
+            cudaMalloc((void**)&dev_bools, n * sizeof(int));
+            cudaMalloc((void**)&dev_indices, n * sizeof(int));
+            cudaMalloc((void**)&dev_scatter, n * sizeof(int));
+
+            // copy input to device
+            cudaMemcpy(dev_idata, idata, sizeof(int) * n, cudaMemcpyHostToDevice);
+
+            // compute temp array containing booleans
+            Common::kernMapToBoolean << <fullBlocksPerGrid, blockSize >> > (n, dev_bools, dev_idata);
+
+            // move device bools to host
+            cudaMemcpy(host_bools, dev_bools, sizeof(int) * n, cudaMemcpyDeviceToHost);
+
+            // run exclusive scan on bool array
+            scan(n, host_indices, host_bools);
+
+            // move host indices to device
+            cudaMemcpy(dev_indices, host_indices, sizeof(int) * n, cudaMemcpyHostToDevice);
+
+            // run scatter to compute final array
+            Common::kernScatter << <fullBlocksPerGrid, blockSize >> > (n, dev_scatter, dev_idata, dev_bools, dev_indices);
+
+            // copy output to host
+            cudaMemcpy(odata, dev_scatter, sizeof(int) * n, cudaMemcpyDeviceToHost);
+
+            // free data from GPU
+            cudaFree(dev_idata);
+            cudaFree(dev_bools);
+            cudaFree(dev_indices);
+            cudaFree(dev_scatter);
+
+            // compute remaining elements
+            if (idata[n - 1] == 0)
+                return n - host_indices[n - 1];
+            else
+                return n - host_indices[n - 1] - 1;
+
+            // timer().endGpuTimer();
         }
     }
 }

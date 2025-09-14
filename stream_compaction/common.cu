@@ -27,6 +27,13 @@ namespace StreamCompaction {
             if (idx >= n) {
               return;
             }
+
+            if (idata[idx] == 0) {
+              bools[idx] = 0;
+            }
+            else {
+              bools[idx] = 1;
+            }
         }
 
         /**
@@ -38,6 +45,10 @@ namespace StreamCompaction {
           int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
           if (idx >= n) {
             return;
+          }
+
+          if (bools[idx] == 1) {
+            odata[indices[idx]] = idata[idx];
           }
         }
 
