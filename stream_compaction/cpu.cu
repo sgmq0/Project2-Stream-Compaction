@@ -3,7 +3,6 @@
 
 #include "common.h"
 
-
 namespace StreamCompaction {
     namespace CPU {
         using StreamCompaction::Common::PerformanceTimer;
@@ -14,7 +13,7 @@ namespace StreamCompaction {
         }
 
         /**
-         * Helper functions from testing_helpes.hpp
+         * Helper functions from testing_helpers.hpp
         */
         void printArray(int n, const int* a, bool abridged = false) {
           printf("    [ ");
