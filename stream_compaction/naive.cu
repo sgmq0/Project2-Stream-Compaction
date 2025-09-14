@@ -52,8 +52,11 @@ namespace StreamCompaction {
         }
 
         // shift right kernel
-        __global__ void shift_right_kernel(int* output, int* input) {
+        __global__ void shift_right_kernel(int n, int* output, int* input) {
           int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+          if (idx >= n) {
+            return;
+          }
 
           if (idx != 0) {
             output[idx] = input[idx - 1];
@@ -61,8 +64,11 @@ namespace StreamCompaction {
         }
 
         // TODO: __global__ kernel
-        __global__ void scan_kernel(int layer, int* output, int* input) {
+        __global__ void scan_kernel(int n, int layer, int* output, int* input) {
             int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+            if (idx >= n) {
+              return;
+            }
 
             if (idx >= pow(2, layer-1)) {
                 output[idx] = input[idx - (int)pow(2, layer - 1)] + input[idx];
@@ -92,21 +98,21 @@ namespace StreamCompaction {
             bool swap = true;
             for (int d = 1; d <= ilog2ceil(n); d++) {
               if (swap) {
-                scan_kernel << <fullBlocksPerGrid, blockSize >> > (d, dev_out, dev_in);
+                scan_kernel << <fullBlocksPerGrid, blockSize >> > (n, d, dev_out, dev_in);
               }
               else {
-                scan_kernel << <fullBlocksPerGrid, blockSize >> > (d, dev_in, dev_out);
+                scan_kernel << <fullBlocksPerGrid, blockSize >> > (n, d, dev_in, dev_out);
               }
               swap = !swap;
             }
 
             // shift right to make exclusive and copy output to host
             if (swap) {
-              shift_right_kernel << <fullBlocksPerGrid, blockSize >> > (dev_out, dev_in);
+              shift_right_kernel << <fullBlocksPerGrid, blockSize >> > (n, dev_out, dev_in);
               cudaMemcpy(odata, dev_out, sizeof(int) * n, cudaMemcpyDeviceToHost);
             }
             else {
-              shift_right_kernel << <fullBlocksPerGrid, blockSize >> > (dev_in, dev_out);
+              shift_right_kernel << <fullBlocksPerGrid, blockSize >> > (n, dev_in, dev_out);
               cudaMemcpy(odata, dev_in, sizeof(int) * n, cudaMemcpyDeviceToHost);
             }
 

@@ -37,8 +37,11 @@ namespace StreamCompaction {
         }
 
         // kernel for upsweep 
-        __global__ void upsweep_kernel(int d, int* buffer) {
+        __global__ void upsweep_kernel(int n, int d, int* buffer) {
           int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+          if (idx >= n) {
+            return;
+          }
 
           int div = pow(2, d + 1);
           if (idx % div == 0) {
@@ -47,8 +50,11 @@ namespace StreamCompaction {
         }
 
         // kernel for downsweep 
-        __global__ void downsweep_kernel(int d, int* buffer) {
+        __global__ void downsweep_kernel(int n, int d, int* buffer) {
           int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
+          if (idx >= n) {
+            return;
+          }
 
           int div = pow(2, d + 1);
           if (idx % div == 0) {
@@ -83,7 +89,7 @@ namespace StreamCompaction {
 
             // upsweep
             for (int d = 0; d <= ilog2ceil(n2) - 1; d++) {
-                upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (d, dev_buf);
+                upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_buf);
             }
 
             // copy back to host to change root to 0, then back to device
@@ -93,7 +99,7 @@ namespace StreamCompaction {
 
             // downsweep
             for (int d = ilog2ceil(n2) - 1; d >= 0; d--) {
-              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (d, dev_buf);
+              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_buf);
             }
 
             // copy output to host
