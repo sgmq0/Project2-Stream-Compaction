@@ -7,7 +7,7 @@
 * Configuration *
 *****************/
 
-#define blockSize 64
+#define blockSize 256
 
 // buffers
 int* dev_scan;
@@ -126,7 +126,7 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int *odata, const int *idata) {
-            // timer().startGpuTimer();
+            //timer().startGpuTimer();
             
             // setup block structure
             dim3 fullBlocksPerGrid((n + blockSize - 1) / blockSize);
@@ -174,7 +174,7 @@ namespace StreamCompaction {
             else
                 return n - host_indices[n - 1] - 1;
 
-            // timer().endGpuTimer();
+            //timer().endGpuTimer();
         }
     }
 }

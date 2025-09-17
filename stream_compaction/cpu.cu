@@ -13,27 +13,6 @@ namespace StreamCompaction {
         }
 
         /**
-         * Helper functions from testing_helpers.hpp
-        */
-        void printArray(int n, const int* a, bool abridged = false) {
-          printf("    [ ");
-          for (int i = 0; i < n; i++) {
-            if (abridged && i + 2 == 15 && n > 16) {
-              i = n - 2;
-              printf("... ");
-            }
-            printf("%3d ", a[i]);
-          }
-          printf("]\n");
-        }
-
-        void zeroArray(int n, int* a) {
-          for (int i = 0; i < n; i++) {
-            a[i] = 0;
-          }
-        }
-
-        /**
          * CPU scan (prefix sum).
          * For performance analysis, this is supposed to be a simple for loop.
          * (Optional) For better understanding before starting moving to GPU, you can simulate your GPU scan in this function first.
@@ -82,7 +61,7 @@ namespace StreamCompaction {
          * @returns the number of elements remaining after compaction.
          */
         int compactWithScan(int n, int *odata, const int *idata) {
-            //timer().startCpuTimer();
+            timer().startCpuTimer();
             int* compact = new int[n];
             int compact_count = 0;
             for (int i = 0; i < n; i++) {
@@ -96,12 +75,14 @@ namespace StreamCompaction {
             }
 
             int* scan_result = new int[n];
-            zeroArray(n, scan_result);
-            scan(n, scan_result, compact);
+            scan_result[0] = 0;
+            for (int i = 1; i < n; i++) {
+              scan_result[i] = compact[i - 1] + scan_result[i - 1];
+            }
 
             int items_left = scatter(n, odata, compact, scan_result, idata);
 
-            //timer().endCpuTimer();
+            timer().endCpuTimer();
             return items_left;
         }
     }
