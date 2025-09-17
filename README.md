@@ -12,16 +12,26 @@ This project implements the all-prefix sums scan algorithm on the CPU, a naive v
 ## Project Description
 
 ### CPU Scan
+A sequential, O(n) scan on the CPU was first implemented. This is pretty trivial, looping through every item of the array and adding the previously summed number to the element at the current index.
 
 ### Naive GPU Scan
+A O(log2(n)) parallel scan was implemented on the GPU. For each "layer" of the scan, we increase the gaps between the items to be added. For cases where N was not a power of two, the length of the array was extended to the next power of two.
 
 ### Work-Efficient GPU Scan and Stream Compaction
+An O(n) work-efficient scan algorithm was also implemented on the GPU. This involves treating the array as a balanced binary tree, and performing an upsweep parallel reduction, then a downsweep to traverse back down the partial sums, performing the scan in place. 
+Like with the Naive GPU scan, the array was extended for arrays where N was not a power of two.
+
+Similarly, a parallel compaction algorithm was also implemented in three steps: First, computing a true/false array. Second, running an exclusive scan on the true/false array. Then, scattering the result using a custom scatter function. All three steps run in parallel, giving us a time complexity of O(n).
 
 ### Thrust Scan
+Using the thrust library provided with the base files, another scan algorithm was also implemented. This involved converting the input and output to thrust_vectors, and simply running thrust::exclusive_scan on them. 
 
 ## Performance Analysis
 
 ### Block Size
+I tested various block sizes, ranging from 64 threads, to 128, to 256, and 512. Each of these tests was run on an array size of 2^8 items. As you can see, there's not much of a difference in runtime between them. I decided to use a block size of 128 threads for the rest of my tests.
+![](img/image1.1.png)
+![](img/image1.png)
 
 ### Naive GPU Scan
 
