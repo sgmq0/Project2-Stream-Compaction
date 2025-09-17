@@ -8,7 +8,7 @@
 *****************/
 
 /*! Block size used for CUDA kernel launch. */
-#define blockSize 64
+#define blockSize 128
 
 /***********************************************
 * Kernel state (pointers are device pointers) *

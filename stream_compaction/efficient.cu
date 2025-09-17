@@ -7,7 +7,7 @@
 * Configuration *
 *****************/
 
-#define blockSize 256
+#define blockSize 128
 
 // buffers
 int* dev_scan;
@@ -24,6 +24,21 @@ namespace StreamCompaction {
         {
             static PerformanceTimer timer;
             return timer;
+        }
+
+        /**
+         * Helper functions from testing_helpers.hpp
+        */
+        void printArray(int n, const int* a, bool abridged = false) {
+          printf("    [ ");
+          for (int i = 0; i < n; i++) {
+            if (abridged && i + 2 == 15 && n > 16) {
+              i = n - 2;
+              printf("... ");
+            }
+            printf("%3d ", a[i]);
+          }
+          printf("]\n");
         }
 
         // kernel for upsweep 
@@ -154,7 +169,7 @@ namespace StreamCompaction {
             timer().endGpuTimer();
 
             // copy output to host
-            cudaMemcpy(odata, dev_scatter, sizeof(int) * n, cudaMemcpyDeviceToHost);
+            cudaMemcpy(odata, dev_scatter, sizeof(int) * n2, cudaMemcpyDeviceToHost);
             cudaMemcpy(host_indices, dev_indices, sizeof(int) * n2, cudaMemcpyDeviceToHost);
 
             // free data from GPU
