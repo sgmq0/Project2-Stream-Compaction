@@ -33,13 +33,21 @@ I tested various block sizes, ranging from 64 threads, to 128, to 256, and 512. 
 ![](img/image1.1.png)
 ![](img/image1.png)
 
+For the following charts, I used this data:
+![](img/image6.png)
 ### Naive GPU Scan
+![](img/image2.png)
+Here, the CPU scan is actually faster than the GPU scan.
 
 ### Work-Efficient Scan
-
-### Work-Efficient Stream Compaction
+![](img/image3.png)
+Similarly, the CPU scan is faster here. The work-efficient scan is also slower than the Naive scan as well.
 
 ### Thrust
+![](img/image4.png)
+
+### Work-Efficient Stream Compaction
+![](img/image5.png)
 
 ## Output
 A sample of my output. N=2^8.
