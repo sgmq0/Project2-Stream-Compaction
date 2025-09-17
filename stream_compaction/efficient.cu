@@ -26,21 +26,6 @@ namespace StreamCompaction {
             return timer;
         }
 
-        /**
-         * Helper functions from testing_helpers.hpp
-        */
-        void printArray(int n, const int* a, bool abridged = false) {
-          printf("    [ ");
-          for (int i = 0; i < n; i++) {
-            if (abridged && i + 2 == 15 && n > 16) {
-              i = n - 2;
-              printf("... ");
-            }
-            printf("%3d ", a[i]);
-          }
-          printf("]\n");
-        }
-
         // kernel for upsweep 
         __global__ void upsweep_kernel(int n, int d, int* buffer) {
           int idx = (blockIdx.x * blockDim.x) + threadIdx.x;
@@ -75,11 +60,27 @@ namespace StreamCompaction {
         }
 
         /**
+         * Helper function for doing scan
+         */
+        void up_down_sweep(dim3 fullBlocksPerGrid, int n2, int* dev_array) {
+            for (int d = 0; d <= ilog2ceil(n2) - 1; d++) {
+              upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_array);
+            }
+
+            // set root to 0
+            cudaMemset(dev_array + n2 - 1, 0, sizeof(int));
+
+            // downsweep
+            for (int d = ilog2ceil(n2) - 1; d >= 0; d--) {
+              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_array);
+            }
+        }
+
+        /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
         void scan(int n, int *odata, const int *idata) {
-            timer().startGpuTimer();
-            
+
             // expand N to next power of 2
             int n2 = pow(2, ilog2ceil(n));
 
@@ -92,28 +93,18 @@ namespace StreamCompaction {
             // copy only first n of input to device
             cudaMemcpy(dev_scan, idata, sizeof(int) * n, cudaMemcpyHostToDevice);
 
-            // upsweep
-            for (int d = 0; d <= ilog2ceil(n2) - 1; d++) {
-                upsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_scan);
-            }
+            timer().startGpuTimer();
 
-            // copy back to host to change root to 0, then back to device
-            cudaMemcpy(odata, dev_scan, sizeof(int) * n2, cudaMemcpyDeviceToHost);
-            odata[n2 - 1] = 0;
-            cudaMemcpy(dev_scan, odata, sizeof(int) * n2, cudaMemcpyHostToDevice);
+            // upsweep, downsweep
+            up_down_sweep(fullBlocksPerGrid, n2, dev_scan);
 
-            // downsweep
-            for (int d = ilog2ceil(n2) - 1; d >= 0; d--) {
-              downsweep_kernel << <fullBlocksPerGrid, blockSize >> > (n2, d, dev_scan);
-            }
+            timer().endGpuTimer();
 
             // copy output to host
             cudaMemcpy(odata, dev_scan, sizeof(int) * n, cudaMemcpyDeviceToHost);
 
             // free data from GPU
             cudaFree(dev_scan);
-
-            timer().endGpuTimer();
         }
 
         /**
@@ -126,41 +117,45 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int *odata, const int *idata) {
-            //timer().startGpuTimer();
+
+            // expand N to next power of 2
+            int n2 = pow(2, ilog2ceil(n));
             
             // setup block structure
-            dim3 fullBlocksPerGrid((n + blockSize - 1) / blockSize);
+            dim3 fullBlocksPerGrid((n2 + blockSize - 1) / blockSize);
 
             // initialize host arrays
-            int* host_bools = new int[n];
-            int* host_indices = new int[n];
+            int* host_bools = new int[n2];
+            int* host_indices = new int[n2];
 
             // allocate memory on GPU
-            cudaMalloc((void**)&dev_idata, n * sizeof(int));
-            cudaMalloc((void**)&dev_bools, n * sizeof(int));
-            cudaMalloc((void**)&dev_indices, n * sizeof(int));
-            cudaMalloc((void**)&dev_scatter, n * sizeof(int));
+            cudaMalloc((void**)&dev_idata, n2 * sizeof(int));
+            cudaMalloc((void**)&dev_bools, n2 * sizeof(int));
+            cudaMalloc((void**)&dev_indices, n2 * sizeof(int));
+            cudaMalloc((void**)&dev_scatter, n2 * sizeof(int));
 
             // copy input to device
-            cudaMemcpy(dev_idata, idata, sizeof(int) * n, cudaMemcpyHostToDevice);
+            cudaMemcpy(dev_idata, idata, sizeof(int) * n2, cudaMemcpyHostToDevice);
+
+            timer().startGpuTimer();
 
             // compute temp array containing booleans
-            Common::kernMapToBoolean << <fullBlocksPerGrid, blockSize >> > (n, dev_bools, dev_idata);
+            Common::kernMapToBoolean << <fullBlocksPerGrid, blockSize >> > (n2, dev_bools, dev_idata);
 
-            // move device bools to host
-            cudaMemcpy(host_bools, dev_bools, sizeof(int) * n, cudaMemcpyDeviceToHost);
+            // copy dev_bools to dev_indices
+            cudaMemcpy(dev_indices, dev_bools, sizeof(int) * n2, cudaMemcpyDeviceToDevice);
 
             // run exclusive scan on bool array
-            scan(n, host_indices, host_bools);
-
-            // move host indices to device
-            cudaMemcpy(dev_indices, host_indices, sizeof(int) * n, cudaMemcpyHostToDevice);
+            up_down_sweep(fullBlocksPerGrid, n2, dev_indices);
 
             // run scatter to compute final array
-            Common::kernScatter << <fullBlocksPerGrid, blockSize >> > (n, dev_scatter, dev_idata, dev_bools, dev_indices);
+            Common::kernScatter << <fullBlocksPerGrid, blockSize >> > (n2, dev_scatter, dev_idata, dev_bools, dev_indices);
+
+            timer().endGpuTimer();
 
             // copy output to host
             cudaMemcpy(odata, dev_scatter, sizeof(int) * n, cudaMemcpyDeviceToHost);
+            cudaMemcpy(host_indices, dev_indices, sizeof(int) * n2, cudaMemcpyDeviceToHost);
 
             // free data from GPU
             cudaFree(dev_idata);
@@ -173,8 +168,6 @@ namespace StreamCompaction {
                 return n - host_indices[n - 1];
             else
                 return n - host_indices[n - 1] - 1;
-
-            //timer().endGpuTimer();
         }
     }
 }
